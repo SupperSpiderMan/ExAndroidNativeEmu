@@ -7,12 +7,7 @@ from unicorn import *
 from androidemu.utils import debug_utils
 
 from androidemu.emulator import Emulator
-
-logging.basicConfig(
-    stream=sys.stdout,
-    level=logging.DEBUG,
-    format="%(asctime)s %(levelname)7s %(name)34s | %(message)s"
-)
+from androidemu.java.classes.string import String
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +40,8 @@ class TestNative(unittest.TestCase):
         self.assertTrue(module.base != 0)
 
         #emulator.mu.hook_add(UC_HOOK_CODE, hook_code, emulator)
-        res = emulator.call_symbol(module, 'Java_com_aeonlucid_nativetesting_MainActivity_testOneArg', emulator.java_vm.jni_env.address_ptr, 0x00, 'Hello')
-        self.assertEqual(res, "Hello")
+        res = emulator.call_symbol(module, 'Java_com_aeonlucid_nativetesting_MainActivity_testOneArg', emulator.java_vm.jni_env.address_ptr, 0x00, String('Hello'))
+        pystr = res.get_py_string()
+        self.assertEqual(pystr, "Hello")
     #
 #

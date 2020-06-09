@@ -4,7 +4,8 @@ import os
 from unicorn import *
 from unicorn.arm_const import *
 
-def dump_memory(mu, fd, min_addr=0, max_addr=0xFFFFFFFF):
+def dump_memory(emu, fd, min_addr=0, max_addr=0xFFFFFFFF):
+    mu = emu.mu
     line_connt = 16
     offset = 0
     regions = []
@@ -71,11 +72,21 @@ g_md_thumb.detail = True
 g_md_arm = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_ARM)
 g_md_arm.detail = True
 
+def get_module_by_addr(emu, addr):
+    ms = emu.modules
+    module = None
+    for m in ms:
+        if (addr >= m.base and addr <= m.base+m.size):
+            module = m
+            break
+        #
+    #
+    return module
+#
 
 # print code and its moudle in a line
 def dump_code(emu, address, size, fd):
 
-    ms = emu.modules
     #判断是否arm，用不同的decoder
     mu = emu.mu
     cpsr = mu.reg_read(UC_ARM_REG_CPSR)
@@ -95,12 +106,7 @@ def dump_code(emu, address, size, fd):
         module = None
         base = 0
         funName = None
-        for m in ms:
-            if (addr >= m.base and addr <= m.base+m.size):
-                module = m
-                break
-            #
-        #
+        module = get_module_by_addr(emu, addr)
         if (module != None):
             name = os.path.basename(module.filename)
             base = module.base
@@ -122,4 +128,18 @@ def dump_code(emu, address, size, fd):
             line = "%s\t;(%s)"%(line, regs)
         #
         fd.write(line+"\n")
+#
+
+def dump_stack(emu, fd, max_deep=512):
+    mu = emu.mu
+    sp =  mu.reg_read(UC_ARM_REG_SP)
+    stop = sp + max_deep
+    fd.wirte("stack dumps:\n")
+    for ptr in range(sp, stop, 4):
+        valb = mu.mem_read(ptr, 4)
+        val = int.from_bytes(valb, byteorder='little', signed=False)
+        line = "0x%08X: 0x%08X\n"%(ptr, val)
+        fd.write(line)
+    #
+    
 #

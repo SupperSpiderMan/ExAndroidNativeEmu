@@ -9,7 +9,6 @@ from unicorn.arm_const import *
 from androidemu.emulator import Emulator
 from androidemu.java.java_class_def import JavaClassDef
 from androidemu.java.java_method_def import java_method_def
-import androidemu.config
 import androidemu.utils.debug_utils
 from androidemu.utils.chain_log import ChainLogger
 
@@ -65,18 +64,10 @@ class MainActivity(metaclass=JavaClassDef, jvm_name='local/myapp/testnativeapp/M
         pass
 
 
-# Configure logging
-logging.basicConfig(
-    stream=sys.stdout,
-    level=logging.DEBUG,
-    format="%(asctime)s %(levelname)7s %(name)34s | %(message)s"
-)
-
 logger = logging.getLogger(__name__)
 
 # Initialize emulator
 emulator = Emulator(
-    vfp_inst_set=True,
     vfs_root=posixpath.join(posixpath.dirname(__file__), "vfs")
 )
 

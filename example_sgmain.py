@@ -9,9 +9,10 @@ from unicorn.arm_const import *
 from androidemu.emulator import Emulator
 from androidemu.java.java_class_def import JavaClassDef
 from androidemu.java.java_method_def import java_method_def
-import androidemu.config
+from androidemu.java.classes.string import String
 import androidemu.utils.debug_utils
 from androidemu.utils.chain_log import ChainLogger
+from androidemu.java.constant_values import *
 
 import capstone
 import traceback
@@ -41,17 +42,17 @@ class HttpUtil(metaclass=JavaClassDef, jvm_name='com/taobao/wireless/security/ad
 
     @java_method_def(name='sendSyncHttpGetRequestBridge', signature='(Ljava/lang/String;)Ljava/lang/String;', native=False)
     def sendSyncHttpGetRequestBridge(self, mu, string):
-        return None
+        return JAVA_NULL
     #
 
     @java_method_def(name='sendSyncHttpPostRequestBridge', signature='(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;II)Ljava/lang/String;', native=False)
     def sendSyncHttpPostRequestBridge(self, mu, s1, s2, s3, i1, i2):
-        return None
+        return JAVA_NULL
     #
 
     @java_method_def(name='downloadFileBridge', signature='(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;', native=False)
     def downloadFileBridge(self, mu, s1, s2):
-        return None
+        return JAVA_NULL
     #
 #
 
@@ -121,7 +122,7 @@ class SPUtility2(metaclass=JavaClassDef, jvm_name='com/taobao/wireless/security/
     def readSS(mu, ctx, s1):
         if (s1 in _kv):
             return _kv[s1]
-        return ""
+        return String("")
     #
 
     @staticmethod
@@ -129,7 +130,7 @@ class SPUtility2(metaclass=JavaClassDef, jvm_name='com/taobao/wireless/security/
     def read(mu, s1):
         if (s1 in _kv):
             return _kv[s1]
-        return ""
+        return String("")
     #
 
 
@@ -138,7 +139,7 @@ class SPUtility2(metaclass=JavaClassDef, jvm_name='com/taobao/wireless/security/
     def write(mu, s1, s2):
         if (s1 in _kv):
             return _kv[s1]
-        return ""
+        return String("")
     #
 #
 
@@ -150,7 +151,7 @@ class DeviceInfoCapturer(metaclass=JavaClassDef, jvm_name='com/taobao/wireless/s
     @staticmethod
     @java_method_def(name='doCommandForString', signature='(I)Ljava/lang/String;', native=False)
     def doCommandForString(mu, cmdId):
-        return "0"
+        return String("0")
     #
 
 #
@@ -163,7 +164,7 @@ class DataReportJniBridge(metaclass=JavaClassDef, jvm_name='com/taobao/wireless/
     @staticmethod
     @java_method_def(name='sendReportBridge', signature='(Ljava/lang/String;Ljava/lang/String;[B)Ljava/lang/String;', native=False)
     def sendReportBridge(mu, s1, s2, bytes1):
-        return ""
+        return String("")
     #
 
 
@@ -227,18 +228,11 @@ class UserTrackMethodJniBridge(metaclass=JavaClassDef, jvm_name='com/alibaba/wir
     #
 #
 
-# Configure logging
-logging.basicConfig(
-    stream=sys.stdout,
-    level=logging.DEBUG,
-    format="%(asctime)s %(levelname)7s %(name)34s | %(message)s"
-)
 
 logger = logging.getLogger(__name__)
 
 # Initialize emulator
 emulator = Emulator(
-    vfp_inst_set=True,
     vfs_root=posixpath.join(posixpath.dirname(__file__), "vfs")
 )
 

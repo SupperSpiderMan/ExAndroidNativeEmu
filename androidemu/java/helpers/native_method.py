@@ -3,10 +3,10 @@ import inspect
 from unicorn import Uc
 from unicorn.arm_const import *
 
-from androidemu.hooker import STACK_OFFSET
-from androidemu.java.java_class_def import JavaClassDef
-from androidemu.java.jni_const import JNI_ERR
-from androidemu.java.jni_ref import jobject, jstring, jobjectArray, jbyteArray
+from ...hooker import STACK_OFFSET
+from ..java_class_def import JavaClassDef
+from ..jni_const import JNI_ERR
+from ..jni_ref import jobject
 
 
 def native_write_args(emu, *argv):
@@ -68,12 +68,8 @@ def native_read_args(mu, args_count):
 def native_translate_arg(emu, val):
     if isinstance(val, int):
         return val
-    elif isinstance(val, str):
-        return emu.java_vm.jni_env.add_local_reference(jstring(val))
-    elif isinstance(val, list):
-        return emu.java_vm.jni_env.add_local_reference(jobjectArray(val))
     elif isinstance(val, bytearray):
-        return emu.java_vm.jni_env.add_local_reference(jbyteArray(val))
+        return emu.java_vm.jni_env.add_local_reference(jobject(val))
     elif isinstance(type(val), JavaClassDef):
         # TODO: Look into this, seems wrong..
         return emu.java_vm.jni_env.add_local_reference(jobject(val))
@@ -113,7 +109,15 @@ def native_method(func):
             result = func(argv[0], mu, *native_args)
 
         if result is not None:
-            native_write_arg_register(emu, UC_ARM_REG_R0, result)
+            if(isinstance(result, tuple)):
+                #tuple作为特殊返回8字节数据约定
+                rlow = result[0]
+                rhigh = result[1]
+                native_write_arg_register(emu, UC_ARM_REG_R0, rlow)
+                native_write_arg_register(emu, UC_ARM_REG_R1, rhigh)
+            else:
+                native_write_arg_register(emu, UC_ARM_REG_R0, result)
+            #
         #
     #
 

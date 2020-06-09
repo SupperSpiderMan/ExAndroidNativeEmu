@@ -10,7 +10,7 @@ from androidemu.emulator import Emulator
 from androidemu.java.java_class_def import JavaClassDef
 from androidemu.java.java_method_def import java_method_def
 from androidemu.java.java_field_def import JavaFieldDef
-import androidemu.config
+from androidemu.java.classes.string import String
 import androidemu.utils.debug_utils 
 from androidemu.utils.chain_log import ChainLogger
 
@@ -37,7 +37,7 @@ def hook_code(mu, address, size, user_data):
 
 class Helper(metaclass=JavaClassDef, jvm_name='com/SecShell/SecShell/Helper',
 jvm_fields=[
-                     JavaFieldDef('PKGNAME', 'Ljava/lang/String;', True, "com.myxh.coolshopping")
+                     JavaFieldDef('PKGNAME', 'Ljava/lang/String;', True, String("com.myxh.coolshopping"))
                  ]):
 
     def __init__(self):
@@ -72,18 +72,10 @@ class DexInstallV26(metaclass=JavaClassDef, jvm_name='com/SecShell/SecShell/DexI
     #
 #
 
-# Configure logging
-logging.basicConfig(
-    stream=sys.stdout,
-    level=logging.DEBUG,
-    format="%(asctime)s %(levelname)7s %(name)34s | %(message)s"
-)
-
 logger = logging.getLogger(__name__)
 
 # Initialize emulator
 emulator = Emulator(
-    vfp_inst_set=True,
     vfs_root=posixpath.join(posixpath.dirname(__file__), "vfs")
 )
 

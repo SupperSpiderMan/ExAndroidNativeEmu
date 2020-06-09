@@ -5,17 +5,19 @@ import os
 import time
 import sys
 import ctypes
+import socket
 from random import randint
 
 from unicorn import Uc
 from unicorn.arm_const import *
 
-from androidemu.const.android import *
-from androidemu.const.linux import *
-from androidemu.cpu.syscall_handlers import SyscallHandlers
-from androidemu.data import socket_info
-from androidemu.data.socket_info import SocketInfo
-from androidemu.utils import memory_helpers
+from ..const.android import *
+from ..const.linux import *
+from.syscall_handlers import SyscallHandlers
+from ..utils import memory_helpers
+from .. import config
+from .. import pcb
+from ..utils import debug_utils
 
 OVERRIDE_TIMEOFDAY = False
 OVERRIDE_TIMEOFDAY_SEC = 0
@@ -39,17 +41,21 @@ class SyscallHooks:
         self._mu = mu
  
         self._syscall_handler = syscall_handler
-        self._syscall_handler.set_handler(0x2, "fork", 0, self._fork)
+        self._syscall_handler.set_handler(0x2, "fork", 0, self.__fork)
+        self._syscall_handler.set_handler(0x0B, "execve", 3, self.__execve)
         self._syscall_handler.set_handler(0x14, "getpid", 0, self._getpid)
         self._syscall_handler.set_handler(0x1A, "ptrace", 4, self.__ptrace)
         self._syscall_handler.set_handler(0x25, "kill", 2, self.__kill)
-        self._syscall_handler.set_handler(0x2A, "pipe", 1, self._pipe)
+        self._syscall_handler.set_handler(0x2A, "pipe", 1, self.__pipe)
         self._syscall_handler.set_handler(0x43, "sigaction", 3, self._handle_sigaction)
         self._syscall_handler.set_handler(0x4E, "gettimeofday", 2, self._handle_gettimeofday)
         self._syscall_handler.set_handler(0x72, "wait4", 4, self.__wait4)
         self._syscall_handler.set_handler(0x74, "sysinfo", 1, self.__sysinfo)
+        self._syscall_handler.set_handler(0x78, "clone", 5, self.__clone)
         self._syscall_handler.set_handler(0xAC, "prctl", 5, self._handle_prctl)
         self._syscall_handler.set_handler(0xAF, "sigprocmask", 3, self._handle_sigprocmask)
+        self._syscall_handler.set_handler(0xBA, "sigaltstack", 2, self.__sigaltstack)
+        self._syscall_handler.set_handler(0xBE, "vfork", 0, self.__vfork)
         self._syscall_handler.set_handler(0xC7, "getuid32", 0, self._get_uid)
         self._syscall_handler.set_handler(0xE0, "gettid", 0, self._gettid)
         self._syscall_handler.set_handler(0xF0, "futex", 6, self._handle_futex)
@@ -58,27 +64,72 @@ class SyscallHooks:
         self._syscall_handler.set_handler(0x119, "socket", 3, self._socket)
         self._syscall_handler.set_handler(0x11a, "bind", 3, self._bind)
         self._syscall_handler.set_handler(0x11b, "connect", 3, self._connect)
-        self._syscall_handler.set_handler(0x14e, "faccessat", 4, self._faccessat)
+        self._syscall_handler.set_handler(0x126, "setsockopt", 5, self._setsockopt)
         self._syscall_handler.set_handler(0x159, "getcpu", 3, self._getcpu)
-        self._syscall_handler.set_handler(0x14e, "faccessat", 4, self._faccessat)
-        # self._syscall_handler.set_handler(0x180,"null1",0, self._null)
+        self._syscall_handler.set_handler(0x166, "dup3", 3, self.__dup3)
+        self._syscall_handler.set_handler(0x167, "pipe2", 2, self.__pipe2)
+        self._syscall_handler.set_handler(0x178, "process_vm_readv", 6, self.__process_vm_readv)
         self._syscall_handler.set_handler(0x180, "getrandom", 3, self._getrandom)
+        self._syscall_handler.set_handler(0xf0002, "ARM_cacheflush", 0, self._ARM_cacheflush)
+        self._syscall_handler.set_handler(0xa2, "nanosleep", 2, self._nanosleep)
         self._clock_start = time.time()
-        self._clock_offset = randint(1000, 2000)
-        self._socket_id = 0x100000
-        self._sockets = dict()
+        self._clock_offset = randint(50000, 100000)
         self._sig_maps = {}
+        self.__pcb = pcb.get_pcb()
+        self._process_name = config.global_config_get("pkg_name") #"ChromiumNet10"
         
     #
-    def _fork(self, mu):
-        logging.warning("skip syscall fork")
-        #fork return 0 for child process, return pid for parent process
-        #return 0
-        return 0x2122
+
+    def __do_fork(self, mu):
+        logger.info("fork called")
+        r = os.fork()
+        if (r == 0):
+            pass
+            #实测这样改没效果
+            #logging.basicConfig(level=logging.DEBUG, format='%(process)d - %(asctime)s - %(levelname)s - %(message)s', stream=sys.stdout)
+        #
+        else:
+            logger.info("-----here is parent process child pid=%d"%r)
+        #
+        return r
+    #
+
+    def __fork(self, mu):
+        return self.__do_fork(mu)
+    #
+
+    def __execve(self, mu, filename_ptr, argv_ptr, envp_ptr):
+        filename =memory_helpers.read_utf8(mu, filename_ptr)
+        ptr = argv_ptr
+        params = []
+        logger.info("execve run")
+        while True:
+            off = memory_helpers.read_ptr(mu, ptr)
+            param = memory_helpers.read_utf8(mu, off)
+            if (len(param) == 0):
+                break
+            params.append(param)
+            ptr += 4
+        #
+        logging.warning("execve %s %r"%(filename, params))
+        cmd = " ".join(params)
+
+        pkg_name = config.global_config_get("pkg_name")
+        pm = "pm path %s"%(pkg_name,)
+        if(cmd.find(pm) > -1):
+            output = "package:/data/app/%s-1.apk"%pkg_name
+            logger.info("write to stdout [%s]"%output)
+            os.write(1, output.encode("utf-8"))
+            sys.exit(0)
+        #
+        else:
+            raise NotImplementedError()
+        #
     #
 
     def _getpid(self, mu):
-        return 0x1122
+        pobj = pcb.get_pcb()
+        return pobj.get_pid()
     #
 
     def __ptrace(self, mu, request, pid, addr, data):
@@ -90,13 +141,23 @@ class SyscallHooks:
         logging.warning("kill is call pid=0x%x sig=%d"%(pid, sig))
         if (pid == self._getpid(mu)):
             logging.error("process 0x%x is killing self!!! maybe encounter anti-debug!!!"%pid)
-            #sys.exit(-10)
+            sys.exit(-10)
         #
     #
 
-    def _pipe(self, mu, files):
-        logging.warning("skip syscall pipe files [0x%08X]"%files)
+    def __pipe_common(self, mu, files_ptr, flags):
+        #logging.warning("skip syscall pipe files [0x%08X]"%files_ptr)
+        ps = os.pipe2(flags)
+        logger.info("pipe return %r"%(ps,))
+        self.__pcb.add_fd("[pipe_r]", "[pipe_r]", ps[0])
+        self.__pcb.add_fd("[pipe_w]", "[pipe_w]", ps[1])
+        mu.mem_write(files_ptr, int(ps[0]).to_bytes(4, byteorder='little'))
+        mu.mem_write(files_ptr+4, int(ps[1]).to_bytes(4, byteorder='little'))
         return 0
+    #
+
+    def __pipe(self, mu, files_ptr):
+        return self.__pipe_common(mu, files_ptr, 0)
     #
     
     def _handle_sigaction(self, mu, sig, act, oact):
@@ -126,11 +187,14 @@ class SyscallHooks:
     #
 
     def _gettid(self, mu):
-        return 0x2211
+        #单线程直接用pid代替
+        return self._getpid(mu)
+    #
 
-    def _faccessat(self, mu, filename, pathname, mode, flag):
-        file = memory_helpers.read_utf8(mu, pathname)
+    def _setsockopt(self, mu, fd, level, optname, optval, optlen):
+        logging.warn("_setsockopt not implement skip")
         return 0
+    #
 
     def _getcpu(self, mu, _cpu, node, cache):
         if _cpu != 0:
@@ -161,14 +225,67 @@ class SyscallHooks:
         return 0
     #
 
-    def __wait4(self, mu, pid, start_addr, options, ru):
-        logger.warning("skip syscall wait4 pid [0x%x]"%pid)
+    def __wait4(self, mu, pid, wstatus, options, ru):
+        assert ru==0
+        #return pid
+        logger.warning("syscall wait4 pid %d"%pid)
+        t = os.wait4(pid, options)
+        logger.info("wait4 return %r"%(t,))
+        mu.mem_write(wstatus, int(t[1]).to_bytes(4, "little"))
+        return t[0]
+    #
+    
+    def __sysinfo(self, mu, info_ptr):
+        '''
+        si = {sysinfo} 
+        uptime = {__kernel_long_t} 91942
+        loads = {__kernel_ulong_t [3]} 
+        [0] = {__kernel_ulong_t} 503328
+        [1] = {__kernel_ulong_t} 504576
+        [2] = {__kernel_ulong_t} 537280
+        totalram = {__kernel_ulong_t} 1945137152
+        freeram = {__kernel_ulong_t} 47845376
+        sharedram = {__kernel_ulong_t} 0
+        bufferram = {__kernel_ulong_t} 169373696
+        totalswap = {__kernel_ulong_t} 0
+        freeswap = {__kernel_ulong_t} 0
+        procs = {__u16} 1297
+        pad = {__u16} 0
+        totalhigh = {__kernel_ulong_t} 1185939456
+        freehigh = {__kernel_ulong_t} 1863680
+        mem_unit = {__u32} 1
+        f = 0 char[8]
+        '''
+        uptime = int(self._clock_offset + time.time() - self._clock_start)
+        mu.mem_write(info_ptr + 0, int(uptime).to_bytes(4, byteorder='little'))
+        mu.mem_write(info_ptr + 4, int(503328).to_bytes(4, byteorder='little'))
+        mu.mem_write(info_ptr + 8, int(504576).to_bytes(4, byteorder='little'))
+        mu.mem_write(info_ptr + 12, int(537280).to_bytes(4, byteorder='little'))
+        mu.mem_write(info_ptr + 16, int(1945137152).to_bytes(4, byteorder='little'))
+        mu.mem_write(info_ptr + 20, int(47845376).to_bytes(4, byteorder='little'))
+        mu.mem_write(info_ptr + 24, int(0).to_bytes(4, byteorder='little'))
+        mu.mem_write(info_ptr + 28, int(169373696).to_bytes(4, byteorder='little'))
+        mu.mem_write(info_ptr + 32, int(0).to_bytes(4, byteorder='little'))
+        mu.mem_write(info_ptr + 36, int(0).to_bytes(4, byteorder='little'))
+        mu.mem_write(info_ptr + 40, int(1297).to_bytes(2, byteorder='little'))
+        mu.mem_write(info_ptr + 42, int(0).to_bytes(2, byteorder='little'))
+        mu.mem_write(info_ptr + 44, int(1185939456).to_bytes(4, byteorder='little'))
+        mu.mem_write(info_ptr + 48, int(1863680).to_bytes(4, byteorder='little'))
+        mu.mem_write(info_ptr + 52, int(1).to_bytes(4, byteorder='little'))
+        mu.mem_write(info_ptr + 56, int(0).to_bytes(8, byteorder='little'))
+        #sz 64
+        logger.warning("syscall sysinfo buf 0x%08X return fixed value"%(info_ptr))
         return 0
     #
 
-    def __sysinfo(self, mu, info):
-        logger.warning("skip syscall sysinfo buf 0x%08X just return error"%(info))
+    def __clone(self, mu, fn, child_stack, flags, arg1, arg2):
+        #FIXME implement...
+        #0x01200011 is a code addr?
+        #clone(0x01200011, 0x00000000, 0x00000000, 0x00000000, 0x00000008) ???
+        #0x01200011 is an invalid addr, a invalid syscall!!!
+        logging.warning("syscall clone skip.")
         return -1
+        #raise NotImplementedError()
     #
 
     def _handle_prctl(self, mu, option, arg2, arg3, arg4, arg5):
@@ -188,6 +305,15 @@ class SyscallHooks:
             return 0
         elif option == PR_SET_DUMPABLE:
             return 0
+        elif option == PR_GET_NAME:
+            memory_helpers.write_utf8(mu, arg2, self._process_name)
+            return 0
+        elif option == PR_GET_DUMPABLE:
+            mu.mem_write(arg2, int(0).to_bytes(4, byteorder='little'))
+            return 0
+        elif option == PR_SET_NAME:
+            self._process_name = memory_helpers.read_utf8(mu, arg2)
+            return 0
         else:
             raise NotImplementedError("Unsupported prctl option %d (0x%x)" % (option, option))
         #
@@ -197,9 +323,17 @@ class SyscallHooks:
         return 0
     #
 
+    def __sigaltstack(self, mu, uss, ouss):
+        return 0
+    #
+
+    def __vfork(self, mu):
+        return self.__do_fork(mu)
+    #
+
     def _get_uid(self, mu):
-        #return a android valid app uid, which is >10000
-        return 10023
+        uid = config.global_config_get("uid")
+        return uid
     #
 
     def _handle_futex(self, mu, uaddr, op, val, timeout, uaddr2, val3):
@@ -231,20 +365,24 @@ class SyscallHooks:
 
     def _handle_tgkill(self, mu, tgid, tid, sig):
         if (tgid ==  self._getpid(mu) and sig == 6):
-            logger.warn("tgkill abort self, skip!!!")
+            raise RuntimeError("tgkill abort self,...")
             return 0
         #
+        return 0
         if (tgid == self._getpid(mu) and tid == self._gettid(mu)):
             if (sig in self._sig_maps):
                 sigact = self._sig_maps[sig]
                 addr = sigact[0]
 
                 ctx = memory_helpers.reg_context_save(mu)
-                mu.reg_write(UC_ARM_REG_R0, sig)
                 logging.info("_handle_tgkill calling proc 0x%08X sig:0x%X"%(addr, sig))
-                mu.emu_start(addr, 0xFFFFFFFF)
+                mu.reg_write(UC_ARM_REG_R0, sig)
+                stop_pos = randint(config.HOOK_MEMORY_BASE, config.HOOK_MEMORY_BASE + config.HOOK_MEMORY_SIZE) | 1
+                mu.reg_write(UC_ARM_REG_LR, stop_pos)
+                mu.emu_start(addr, stop_pos-1)
                 logging.info("_handle_tgkill calling sigal call return")
                 memory_helpers.reg_context_restore(mu, ctx)
+                print (123)
                 return 0
             #
         #
@@ -283,31 +421,19 @@ class SyscallHooks:
             raise NotImplementedError("Unsupported clk_id: %d (%x)" % (clk_id, clk_id))
 
     def _socket(self, mu, family, type_in, protocol):
-        socket_id = self._socket_id + 1
-        socket = SocketInfo()
-        socket.domain = family
-        socket.type = type_in
-        socket.protocol = protocol
-
-        self._sockets[socket_id] = socket
-        self._socket_id = self._socket_id + 1
-
+        s = socket.socket(family, type_in, protocol)
+        socket_id = s.fileno()
+        self.__pcb.add_fd("[socket]", "[socket]", socket_id)
         return socket_id
+    #
 
     def _bind(self, mu, fd, addr, addr_len):
-        socket = self._sockets.get(fd, None)
-
-        if socket is None:
-            raise Exception('Expected a socket')
-
-        if socket.domain != socket_info.AF_UNIX and socket.type != socket_info.SOCK_STREAM:
-            raise Exception('Unexpected socket domain / type.')
 
         # The struct is confusing..
-        socket.addr = mu.mem_read(addr + 3, addr_len - 3).decode(encoding="utf-8")
+        addr = mu.mem_read(addr + 3, addr_len - 3).decode(encoding="utf-8")
 
-        logger.info('Binding socket to ://%s' % socket.addr)
-
+        logger.info('Binding socket to ://%s' % addr)
+        raise NotImplementedError()
         return 0
 
     def _connect(self, mu, fd, addr, addr_len):
@@ -320,7 +446,71 @@ class SyscallHooks:
         # return 0
         return -1
         # raise NotImplementedError()
+    #
+    
+    def __dup3(self, mu, oldfd, newfd, flags):
+        assert flags == 0, "dup3 flag not support now"
+        old_detail = self.__pcb.get_fd_detail(oldfd)
+        os.dup2(oldfd, newfd)
+        self.__pcb.add_fd(old_detail.name, old_detail.name_in_system, newfd)
+        return 0
+    #
+
+    def __pipe2(self, mu, files_ptr, flags):
+        return self.__pipe_common(mu, files_ptr, flags)
+    #
 
     def _getrandom(self, mu, buf, count, flags):
         mu.mem_write(buf, b"\x01" * count)
         return count
+
+    def __process_vm_readv(self, mu, pid, local_iov, liovcnt, remote_iov, riovcnt, flag):
+        '''
+        struct iovec {
+            void  *iov_base;    /* Starting address */
+            size_t iov_len;     /* Number of bytes to transfer */
+        };
+        '''
+        if (pid != self._getpid(mu)):
+            raise NotImplementedError("__process_vm_readv return other process not support...")
+        off_r = remote_iov
+        b = b''
+        for i in range(0, riovcnt):
+            rbase = memory_helpers.read_ptr(mu, off_r)
+            iov_len = memory_helpers.read_ptr(mu, off_r+4)
+            tmp = memory_helpers.read_byte_array(mu, rbase, iov_len)
+            b+=tmp
+            off_r+=8
+        #
+        off_l = local_iov
+        has_read = 0
+        for j in range(0, liovcnt):
+            lbase = memory_helpers.read_ptr(mu, off_l)
+            liov_len = memory_helpers.read_ptr(mu, off_l+4)
+            tmp = b[has_read:liov_len]
+            has_read += len(tmp)
+            off_l += 8
+        #
+        #print(b)
+        return has_read
+    #
+
+    def _ARM_cacheflush(self, mu):
+        logging.warning("syscall _ARM_cacheflush skip.")
+        return 0
+    #
+    
+    def _nanosleep(self, mu, req, rem):
+        '''
+        int nanosleep(const struct timespec *req,struct timespec *rem);
+        struct timespec{
+              time_t  tv_sec;         /* seconds */
+              long    tv_nsec;        /* nanoseconds */
+        };
+        '''
+        req_tv_sec = memory_helpers.read_ptr(mu, req)
+        req_tv_nsec = memory_helpers.read_ptr(mu, req + 4)
+        time.sleep((req_tv_sec * 1000 + req_tv_nsec / 1000000) / 1000)
+        return 0
+    #
+#
